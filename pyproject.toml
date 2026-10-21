@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "permguard"
 version = "0.1.0"
-description = "Declarative permission-shape engine: substring glob rules over whole command strings, last-match-wins, with order-aware drift detection."
+description = "Declarative permission-shape engine: substring glob rules over whole command strings, last-match-wins, order-aware drift detection, and a must-contain literal index for sub-linear resolve at scale."
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = "sephnaoe" }]

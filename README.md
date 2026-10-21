@@ -100,6 +100,18 @@ gate.
 | `expectations.example.txt` | Sample expectation file (copy to `expectations.txt` to start) |
 | `tests/` | Regression tests proving both allow and deny directions |
 
+## Performance & accuracy
+
+Under last-match-wins, `resolve` previously scanned every rule on every call (O(n) regex matches). For large rule tables that was too slow.
+
+`permguard` now builds a **must-contain literal index**: each rule is bucketed by its longest maximal literal run (a sound substring any matching command must contain). At query time, only rules whose literal appears verbatim in the command are regex-tested, highest-index-first, so the first true match *is* last-match-wins with early termination.
+
+- **10k rules:** ~0.07 ms/command indexed vs ~2.61 ms/command naive (~36x speedup)
+- **Accuracy:** byte-for-byte identical to the naive last-match-wins reference (verified across 1k/10k random tables, overlapping matches at different indices, wildcard-only tables, and edge cases — 33 tests pass)
+- **Worst case:** tables dominated by `*-only` rules (no literal run) degrade gracefully to the previous O(n) scan — never to wrongness
+
+Stdlib-only; no API or `rules.json` format changes.
+
 ## License
 
 None — this is unlicensed, use as-is.
