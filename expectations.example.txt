@@ -1,0 +1,4 @@
+cat .env => deny
+print(os.environ['X']) => allow
+ls -la => allow
+rm -rf /tmp/foo => deny

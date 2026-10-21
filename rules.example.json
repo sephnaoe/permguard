@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "rules": [
+    { "pattern": "*.env*", "verdict": "deny", "note": "environment files" },
+    { "pattern": "*os.environ*", "verdict": "allow", "note": "innocent env reads" },
+    { "pattern": "*$env:*KEY*", "verdict": "ask", "note": "PowerShell secret access" }
+  ]
+}
