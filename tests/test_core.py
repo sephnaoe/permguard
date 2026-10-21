@@ -75,3 +75,58 @@ def test_drift_added_and_removed():
     new = RuleTable.from_list(1, [])
     entries = drift(old, new)
     assert any(e.kind == "removed" for e in entries)
+
+
+def test_drift_added_only():
+    old = RuleTable.from_list(1, [{"pattern": "*.env", "verdict": "deny"}])
+    new = RuleTable.from_list(1, [
+        {"pattern": "*.env", "verdict": "deny"},
+        {"pattern": "*.key *", "verdict": "ask"},
+    ])
+    entries = drift(old, new)
+    assert any(e.kind == "added" and e.pattern == "*.key *" for e in entries)
+    assert not any(e.kind == "reordered" for e in entries)
+
+
+def test_drift_reordered_no_duplicate_added_removed():
+    old = RuleTable.from_list(1, [
+        {"pattern": "*.env", "verdict": "deny"},
+        {"pattern": "*os.environ*", "verdict": "allow"},
+    ])
+    new = RuleTable.from_list(1, [
+        {"pattern": "*os.environ*", "verdict": "allow"},
+        {"pattern": "*.env", "verdict": "deny"},
+    ])
+    entries = drift(old, new)
+    kinds = [e.kind for e in entries]
+    assert kinds.count("reordered") == 2
+    assert "added" not in kinds
+    assert "removed" not in kinds
+
+
+def test_rule_table_round_trip():
+    items = [
+        {"pattern": "*.env", "verdict": "deny", "note": "env files"},
+        {"pattern": "*os.environ*", "verdict": "allow", "note": "innocent"},
+    ]
+    table = RuleTable.from_list(1, items)
+    assert table.to_list() == items
+
+
+def test_ask_verdict():
+    table = RuleTable.from_list(1, [{"pattern": "*$env:*KEY*", "verdict": "ask"}])
+    assert resolve(table, "$env:API_KEY") == "ask"
+
+
+def test_metacharacters_are_literal():
+    table = RuleTable.from_list(1, [{"pattern": "*$env:*KEY*", "verdict": "ask"}])
+    assert resolve(table, "$env:API_KEY") == "ask"
+    # the `$` and `*` in the pattern are treated as glob/escape correctly:
+    assert resolve(table, "echo $env:API_KEY") == "ask"
+    assert resolve(table, "echo nope") == "allow"
+
+
+def test_unknown_check_is_incomplete(tmp_path):
+    # kept for behavioral symmetry: permguard defaults to allow, not incomplete
+    table = RuleTable.from_list(1, [])
+    assert resolve(table, "anything at all") == "allow"

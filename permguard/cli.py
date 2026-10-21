@@ -6,28 +6,56 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 from .rules import RuleTable
 from .resolver import resolve
 from .drift import drift
 
 
-def _load_table(path: Path) -> RuleTable:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return RuleTable.from_list(version=int(data.get("version", 1)), items=data.get("rules", []))
+def _load_table(path: Path) -> tuple[RuleTable, str | None]:
+    """Load a rule table, returning (table, error_message).
+
+    On success the error message is None. On failure the table is an empty
+    table and the message describes what went wrong, so the caller can print
+    a clean error instead of dumping a traceback.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return RuleTable.from_list(version=1, items=[]), f"rules file not found: {path}"
+    except json.JSONDecodeError as exc:
+        return RuleTable.from_list(version=1, items=[]), f"invalid JSON in {path}: {exc}"
+    except UnicodeDecodeError as exc:
+        return RuleTable.from_list(version=1, items=[]), f"cannot decode {path} as UTF-8: {exc}"
+    except OSError as exc:
+        return RuleTable.from_list(version=1, items=[]), f"cannot read {path}: {exc}"
+    return (
+        RuleTable.from_list(version=int(data.get("version", 1)), items=data.get("rules", [])),
+        None,
+    )
+
+
+def _fail(message: str) -> int:
+    print(f"error: {message}", file=sys.stderr)
+    return 2
 
 
 def _cmd_check(args: argparse.Namespace) -> int:
-    table = _load_table(Path(args.rules))
+    table, error = _load_table(Path(args.rules))
+    if error is not None:
+        return _fail(error)
     verdict = resolve(table, args.command)
     print(f"{args.command!r} -> {verdict}")
     return 0
 
 
 def _cmd_drift(args: argparse.Namespace) -> int:
-    old = _load_table(Path(args.old))
-    new = _load_table(Path(args.new))
+    old, error = _load_table(Path(args.old))
+    if error is not None:
+        return _fail(error)
+    new, error = _load_table(Path(args.new))
+    if error is not None:
+        return _fail(error)
     entries = drift(old, new)
     if not entries:
         print("drift: no behavioral changes")
@@ -42,13 +70,19 @@ def _cmd_drift(args: argparse.Namespace) -> int:
 
 
 def _cmd_test(args: argparse.Namespace) -> int:
-    table = _load_table(Path(args.rules))
+    table, error = _load_table(Path(args.rules))
+    if error is not None:
+        return _fail(error)
+    try:
+        lines = Path(args.expect).read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        return _fail(f"cannot read {args.expect}: {exc}")
     failures = 0
-    for line in Path(args.expect).read_text(encoding="utf-8").splitlines():
+    for line in lines:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        # format: COMMAND => expect:verdict   (commands may contain spaces)
+        # format: COMMAND => verdict   (commands may contain spaces)
         if "=>" not in line:
             continue
         command, _, expect = line.partition("=>")
@@ -85,7 +119,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.subcommand == "check":
@@ -94,7 +128,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_drift(args)
     if args.subcommand == "test":
         return _cmd_test(args)
-    parser.print_help()
     return 2
 
 

@@ -83,7 +83,3 @@ permguard test --rules rules.json --expect expectations.txt
 ```
 
 Exit non-zero on any mismatch — pin the table's behavior.
-
-## License
-
-MIT.
