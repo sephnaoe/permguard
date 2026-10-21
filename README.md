@@ -20,30 +20,32 @@ artifact and proves both directions:
 - **Reordering two rules is a behavior change**, not a no-op — under
   last-match-wins, position is semantics.
 
-The idea is generalized from a permission overlay I built for a personal
-agent system, then stripped of all yard coupling into a tiny, dependency-free
-Python package. Nothing here depends on that system.
-
-## Quick start
+## Install
 
 ```bash
 pip install permguard
 ```
 
-Create `rules.json`:
+## Step 1 — Write your rules (`rules.json`)
 
 ```json
 {
   "version": 1,
   "rules": [
-    {"pattern": "*.env*", "verdict": "deny", "note": "environment files"},
-    {"pattern": "*os.environ*", "verdict": "allow", "note": "innocent env reads"},
-    {"pattern": "*$env:*KEY*", "verdict": "ask", "note": "PowerShell secret access"}
+    { "pattern": "*.env*", "verdict": "deny", "note": "environment files" },
+    { "pattern": "*os.environ*", "verdict": "allow", "note": "innocent env reads" },
+    { "pattern": "*rm -rf*", "verdict": "deny", "note": "block destructive deletes" },
+    { "pattern": "*git push*", "verdict": "ask", "note": "confirm before pushing" },
+    { "pattern": "*$env:*KEY*", "verdict": "ask", "note": "PowerShell secret access" }
   ]
 }
 ```
 
-Resolve a command:
+- `*` matches any characters, including spaces.
+- Matching is case-sensitive and covers the **entire** command string.
+- **Last matching rule wins**, so put broad denies first, narrow allows after.
+
+## Step 2 — Check a command
 
 ```bash
 permguard check "cat .env" --rules rules.json
@@ -51,35 +53,53 @@ permguard check "cat .env" --rules rules.json
 
 permguard check "print(os.environ['X'])" --rules rules.json
 # "print(os.environ['X'])" -> allow
+
+permguard check "git push origin main" --rules rules.json
+# "git push origin main" -> ask
 ```
 
-Last match wins, so `os.environ` inside an otherwise-denied string resolves
-to `allow`.
+Exit code is always `0` for `check` — it only reports the verdict.
 
-## Drift detection
-
-Compare two rule tables; reordering is flagged because position is meaning:
-
-```bash
-permguard drift --old rules.v1.json --new rules.v2.json
-# drift: 1 behavioral change(s):
-#   [1] reordered: "*.env*" (deny -> deny)
-```
-
-Exit 0 = no drift, 1 = drift detected — suitable for a pre-commit or CI gate.
-
-## Expectation tests
-
-Store `command => verdict` pairs and run them as a regression suite:
+## Step 3 — Pin behavior with expectation tests (`expectations.txt`)
 
 ```text
 cat .env => deny
 print(os.environ['X']) => allow
+git push origin main => ask
+rm -rf /tmp => deny
 ls -la => allow
 ```
 
 ```bash
 permguard test --rules rules.json --expect expectations.txt
+# all tests passed
 ```
 
-Exit non-zero on any mismatch — pin the table's behavior.
+Exit `0` if every line matches, `1` if any mismatch — use this in CI to lock
+the table's behavior.
+
+## Step 4 — Catch accidental reorders (`drift`)
+
+Under last-match-wins, swapping two rules changes behavior even if the
+verdicts are identical. `drift` catches this:
+
+```bash
+permguard drift --old rules.json --new rules-edited.json
+# drift: 1 behavioral change(s):
+#   [1] reordered: "*.env*" (deny -> deny)
+```
+
+Exit `0` = no drift, `1` = drift detected — suitable for a pre-commit or CI
+gate.
+
+## Files in this repo
+
+| File | Purpose |
+|---|---|
+| `rules.example.json` | Sample rule table (copy to `rules.json` to start) |
+| `expectations.example.txt` | Sample expectation file (copy to `expectations.txt` to start) |
+| `tests/` | Regression tests proving both allow and deny directions |
+
+## License
+
+None — this is unlicensed, use as-is.
